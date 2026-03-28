@@ -18,6 +18,7 @@
 #include <common/desc_image_load.h>
 #include <common/fdt_fixup.h>
 #include <common/fdt_wrappers.h>
+#include <drivers/io/io_storage.h>
 #include <lib/optee_utils.h>
 #if TRANSFER_LIST
 #include <transfer_list.h>
@@ -80,6 +81,7 @@ static void update_dt(void)
 {
 #if TRANSFER_LIST
 	struct transfer_list_entry *te;
+	bl_mem_params_node_t *bl_mem_params;
 #endif
 	int ret;
 	void *fdt = (void *)(uintptr_t)ARM_PRELOADED_DTB_BASE;
@@ -124,6 +126,29 @@ static void update_dt(void)
 		ERROR("Failed to add FDT entry to Transfer List\n");
 		return;
 	}
+
+#if defined(SPD_spmd)
+	bl_mem_params = get_bl_mem_params_node(TOS_FW_CONFIG_ID);
+	if (bl_mem_params == NULL) {
+		ERROR("Failed to get BL memory params node for TOS_FW_CONFIG_ID\n");
+		return;
+	}
+
+#if SPMC_AT_EL3
+	te = transfer_list_add(bl2_tl, TL_TAG_DT_FFA_MANIFEST,
+			TOS_FW_CONFIG_SIZE, NULL);
+#else
+	te = transfer_list_add(bl2_tl, TL_TAG_DT_SPMC_MANIFEST,
+			TOS_FW_CONFIG_SIZE, NULL);
+#endif
+	assert(te != NULL);
+
+	bl_mem_params->image_info.h.attr &= ~IMAGE_ATTRIB_SKIP_LOADING;
+	bl_mem_params->image_info.image_max_size = TOS_FW_CONFIG_SIZE;
+	bl_mem_params->image_info.image_base =
+		(uintptr_t)transfer_list_entry_data(te);
+#endif /* defined(SPD_spmd) */
+
 #endif
 }
 
