@@ -18,6 +18,9 @@
 #include <common/desc_image_load.h>
 #include <common/fdt_fixup.h>
 #include <common/fdt_wrappers.h>
+#include <drivers/io/io_storage.h>
+#include <lib/fconf/fconf.h>
+#include <lib/fconf/fconf_dyn_cfg_getter.h>
 #include <lib/optee_utils.h>
 #if TRANSFER_LIST
 #include <transfer_list.h>
@@ -124,6 +127,56 @@ static void update_dt(void)
 		ERROR("Failed to add FDT entry to Transfer List\n");
 		return;
 	}
+
+#if SPMC_AT_EL3
+	te = transfer_list_add(bl2_tl, TL_TAG_DT_FFA_MANIFEST,
+			TOS_FW_CONFIG_SIZE, NULL);
+#else
+	te = transfer_list_add(bl2_tl, TL_TAG_DT_SPMC_MANIFEST,
+			TOS_FW_CONFIG_SIZE, NULL);
+#endif
+
+	uintptr_t dev_handle = 0ULL;
+	uintptr_t image_handle = 0ULL;
+	uintptr_t image_spec = 0ULL;
+	size_t bytes_read = 0ULL;
+	int io_result;
+
+	io_result = plat_get_image_source(TOS_FW_CONFIG_ID, &dev_handle, &image_spec);
+	if (io_result != 0) {
+		WARN("Failed to obtain reference to TOS_FW_CONFIG_ID (%i)\n",
+			io_result);
+		return;
+	}
+
+	/* Attempt to access the image */
+	io_result = io_open(dev_handle, image_spec, &image_handle);
+	if (io_result != 0) {
+		WARN("Failed to access TOS_FW_CONFIG_ID (%i)\n", io_result);
+		return;
+	}
+
+	io_result = io_size(image_handle, &bytes_read);
+	if (io_result != 0) {
+		WARN("Failed to get size of TOS_FW_CONFIG_ID (%i)\n", io_result);
+		return;
+	} else {
+		INFO("TOS_FW_CONFIG_ID size: %zu bytes\n", bytes_read);
+	}
+
+	io_result = io_read(image_handle, (uintptr_t)transfer_list_entry_data(te), bytes_read, &bytes_read);
+	if (io_result != 0) {
+		WARN("Failed to read TOS_FW_CONFIG_ID (%i)\n", io_result);
+		return;
+	}
+
+	io_close(image_handle);
+
+	INFO("TOS_FW_CONFIG_ID read: 0x%lx - 0x%lx, target %lx ep %lx\n", (uintptr_t)transfer_list_entry_data(te),
+	     (uintptr_t)(transfer_list_entry_data(te) + bytes_read), TOS_FW_CONFIG_BASE, (uintptr_t)BL32_BASE);
+
+	transfer_list_update_checksum(bl2_tl);
+
 #endif
 }
 
