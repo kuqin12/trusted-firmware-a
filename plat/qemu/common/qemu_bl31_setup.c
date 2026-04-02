@@ -14,6 +14,7 @@
 #if TRANSFER_LIST
 #include <transfer_list.h>
 #endif
+#include <plat/common/plat_hold_pen.h>
 #include <plat/common/platform.h>
 #if ENABLE_RME
 #ifdef PLAT_qemu
@@ -84,6 +85,7 @@ static entry_point_info_t bl33_image_ep_info;
 static entry_point_info_t rmm_image_ep_info;
 #endif
 static struct transfer_list_header __maybe_unused *bl31_tl;
+void __dead2 plat_secondary_cold_boot_setup(void);
 
 /*******************************************************************************
  * Perform any BL3-1 early platform setup.  Here is an opportunity to copy
@@ -124,6 +126,16 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	assert(params_from_bl2->h.version >= VERSION_2);
 
 	bl_params_node_t *bl_params = params_from_bl2->head;
+
+	// Here we populate the hold pen for secondary cores
+	plat_hold_pen_init((struct hold_slot *)PLAT_QEMU_HOLD_BASE,
+		PLATFORM_CORE_COUNT);
+
+	// Then bring the secondary cores out of the hold pen from bl1
+	for (unsigned int pos = 0; pos < PLATFORM_CORE_COUNT; pos++) {
+		plat_hold_pen_signal((struct hold_slot *)PLAT_QEMU_HOLD_BASE,
+			pos, (uintptr_t)plat_secondary_cold_boot_setup);
+	}
 
 	/*
 	 * Copy BL33, BL32 and RMM (if present), entry point information.
